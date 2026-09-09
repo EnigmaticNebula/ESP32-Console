@@ -1,0 +1,17 @@
+extern const int ITERATION_SPEED_PIN;
+extern const int BUTTON_3_PIN;
+extern const int BUTTON_2_PIN;
+extern const int BUTTON_1_PIN ;
+extern const int NAV_UP_PIN ;
+extern const int NAV_LEFT_PIN;
+extern const int NAV_RIGHT_PIN;
+extern const int NAV_DOWN_PIN;
+extern const int NAV_ACTION_PIN ;
+extern const int ROTARY_ENCODER_A_PIN;
+extern const int ROTARY_ENCODER_B_PIN;
+extern const int HIGH_SIDE_SERIAL_PIN;
+extern const int HIGH_SIDE_RCLK_PIN;
+extern const int HIGH_SIDE_SRCLK_PIN;
+extern const int LOW_SIDE_SERIAL_PIN;
+extern const int LOW_SIDE_CLK_PIN;
+extern const int LOW_SIDE_LATCH_PIN;
