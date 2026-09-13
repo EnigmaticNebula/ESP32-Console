@@ -4,9 +4,9 @@
 #include <led_array_driver.hpp>
 #include <pin_definitions.hpp>
 #include <menu_handler\menu_handler.hpp>
+#include <games\conways\conways.hpp>
+#include <games\game.hpp>
 using namespace std;
-
-
 
 // Function declarations
 static void matrix_refresh(void* pvParameters);
@@ -56,6 +56,16 @@ const unsigned int BUTTON_DEBOUNCE_DELAY = 150;
 const unsigned int JOYSTICK_DEBOUNCE_DELAY = 100;
 const unsigned int JOYSTICK_ACTION_DELAY = 200; // Rejects joystick actions occuring within x ms of another
 
+const unsigned int EXIT_GAME_BUTTON_WINDOW = 200; // Defines the window in which button 2 must be pressed after button 1 (or vice versa) when exiting to menu from within a game
+bool button1_game_exit = false;
+bool button2_game_exit = false;
+
+// Game instantiations
+const unsigned int GAME_COUNT = 11;
+Conways conways_game;
+array<Game, GAME_COUNT> games = {{conways_game}};
+
+// Class instantiations
 LedDriver led_driver{display_buffer_ptr};
 MenuHandler menu_handler{game_buffer_ptr};
 
@@ -150,7 +160,7 @@ static void game_loop(void* pvParameters) {
   attachInterrupt(digitalPinToInterrupt(NAV_RIGHT_PIN), nav_right, FALLING);
   attachInterrupt(digitalPinToInterrupt(NAV_DOWN_PIN), nav_down, FALLING);
   attachInterrupt(digitalPinToInterrupt(NAV_LEFT_PIN), nav_left, FALLING);
-  attachInterrupt(digitalPinToInterrupt(NAV_ACTION_PIN), nav_act, FALLING); // Nav action must be triggered on rising edge so actions always occur after joystick movements
+  attachInterrupt(digitalPinToInterrupt(NAV_ACTION_PIN), nav_act, FALLING);
   attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_A_PIN), encoder_a_change, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_B_PIN), encoder_b_change, CHANGE);
 
@@ -158,8 +168,27 @@ static void game_loop(void* pvParameters) {
     unsigned int current_time = millis();
     if (current_time - last_speed_check >= 100) {
       last_speed_check = current_time;
-      iteration_delay = get_iteration_speed();
+      int raw_potentiometer_output = analogRead(ITERATION_SPEED_PIN);
+      if (!menu_handler.menu_active) {
+        games[menu_handler.selected_game].potentiometer_change(raw_potentiometer_output);
+      }
     }
+
+    if (button1_game_exit && button2_game_exit) {
+      games[menu_handler.selected_game].unload();
+      menu_handler.menu_active = true;
+    }
+
+    if (current_time - last_button_1_press >= EXIT_GAME_BUTTON_WINDOW) {
+      button1_game_exit = false;
+    }
+
+    if (current_time - last_button_2_press >= EXIT_GAME_BUTTON_WINDOW) {
+      button2_game_exit = false;
+    }
+
+    if (menu_handler.menu_active) menu_handler.refresh();
+    else games[menu_handler.selected_game].iterate();
 
     if (xSemaphoreTake(buffer_mutex, portMAX_DELAY) == pdTRUE) {
       for (int i = 0; i < 16; i++) {
@@ -187,24 +216,34 @@ void clear_game_buffer() {
 void IRAM_ATTR button_1_isr() {
   unsigned int current_time = millis();
   if (current_time - last_button_1_press >= BUTTON_DEBOUNCE_DELAY) {
-    Serial.println("BUTTON 1");
     last_button_1_press = current_time;
+    if (menu_handler.menu_active) {
+      games[menu_handler.selected_game].load();
+    } else {
+      games[menu_handler.selected_game].button1();
+      button1_game_exit = true;
+    }
   }
 }
 
 void IRAM_ATTR button_2_isr() {
   unsigned int current_time = millis();
   if (current_time - last_button_2_press >= BUTTON_DEBOUNCE_DELAY) {
-    Serial.println("BUTTON 2");
     last_button_2_press = current_time;
+    if (!menu_handler.menu_active) {
+      games[menu_handler.selected_game].button2();
+      button2_game_exit = true;
+    }
   }
 }
 
 void IRAM_ATTR button_3_isr() {
   unsigned int current_time = millis();
   if (current_time - last_button_3_press >= BUTTON_DEBOUNCE_DELAY) {
-    Serial.println("BUTTON 3");
     last_button_3_press = current_time;
+    if (!menu_handler.menu_active) {
+      games[menu_handler.selected_game].button3();
+    }
   }
 }
 
@@ -213,7 +252,9 @@ void IRAM_ATTR nav_up() {
   if (current_time - last_nav_up_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_up_press = current_time;
     last_joystick_input = current_time;
-    Serial.println("UP");
+    if (!menu_handler.menu_active) {
+      games[menu_handler.selected_game].joystick_up();
+    }
   }
 }
 
@@ -222,6 +263,9 @@ void IRAM_ATTR nav_right() {
   if (current_time - last_nav_right_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_right_press = current_time;
     last_joystick_input = current_time;
+    if (!menu_handler.menu_active) {
+      games[menu_handler.selected_game].joystick_right();
+    }
   }
 }
 
@@ -230,6 +274,9 @@ void IRAM_ATTR nav_down() {
   if (current_time - last_nav_down_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_down_press = current_time;
     last_joystick_input = current_time;
+    if (!menu_handler.menu_active) {
+      games[menu_handler.selected_game].joystick_down();
+    }
   }
 }
 
@@ -238,6 +285,9 @@ void IRAM_ATTR nav_left() {
   if (current_time - last_nav_left_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_left_press = current_time;
     last_joystick_input = current_time;
+    if (!menu_handler.menu_active) {
+      games[menu_handler.selected_game].joystick_left();
+    }
   }
 }
 
@@ -245,7 +295,9 @@ void IRAM_ATTR nav_act() {
   unsigned int current_time = millis();
   if (current_time - last_nav_action_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_action_press = current_time;
-    Serial.println("ACT");
+    if (!menu_handler.menu_active) {
+      games[menu_handler.selected_game].joystick_action();
+    }
   }
 }
 
@@ -254,9 +306,10 @@ void IRAM_ATTR encoder_a_change() {
   if (current_time - last_encoder_a_change >= JOYSTICK_DEBOUNCE_DELAY) {
     if (!anticlockwise_rotation) {
       clockwise_rotation = true;
-      if (menu_handler.menu_active) {
-        Serial.println("a");
+      if (menu_handler.menu_active && menu_handler.selected_game < GAME_COUNT)  {
         menu_handler.next_game();
+      } else if (!menu_handler.menu_active) {
+        games[menu_handler.selected_game].rotary_encoder_clockwise();
       }
     } else {
       anticlockwise_rotation = false;
@@ -271,8 +324,9 @@ void IRAM_ATTR encoder_b_change() {
     if (!clockwise_rotation) {
       anticlockwise_rotation = true;
       if (menu_handler.selected_game > 0 && menu_handler.menu_active) {
-        Serial.println("b");
         menu_handler.previous_game();
+      } else if (!menu_handler.menu_active) {
+        games[menu_handler.selected_game].rotary_encoder_anticlockwise();
       }
     } else {
       clockwise_rotation = false;
