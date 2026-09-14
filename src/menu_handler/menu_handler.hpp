@@ -8,6 +8,7 @@ using namespace std;
 class MenuHandler {
     private:
     bool (*game_buffer_ptr)[16];
+    int (*display_pixel_brightness_ptr)[16];
 
     void select_game() {
         switch (selected_game) {
@@ -107,6 +108,7 @@ class MenuHandler {
         for (int i = 0; i < 16; i++) {
             for (int j = 0; j < 16; j++) {
                 game_buffer_ptr[i][j] = menu_graphics[15 - i][j]; // Row index is 15 - i as menu graphics are flipped to make designing easier
+                display_pixel_brightness_ptr[i][j] = menu_graphics_brightness[15 - i][j];
             }
         }
     }
@@ -117,8 +119,9 @@ class MenuHandler {
     volatile bool menu_active = true;
     unsigned int selected_game = 0;
 
-    MenuHandler(bool (*&game_buffer_ptr)[16]) {
+    MenuHandler(bool (*&game_buffer_ptr)[16], int (*&display_pixel_brightness_ptr)[16]) {
         this->game_buffer_ptr = game_buffer_ptr;
+        this->display_pixel_brightness_ptr = display_pixel_brightness_ptr;
     }
 
     void next_game() {

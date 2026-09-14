@@ -6,6 +6,7 @@
 #include <pin_definitions.hpp>
 #include <menu_handler\menu_handler.hpp>
 #include <games\conways\conways.hpp>
+#include <games\naughts_crosses\naughts_crosses.hpp>
 #include <games\game.hpp>
 #include <game_utilities\cursor.hpp>
 using namespace std;
@@ -27,8 +28,10 @@ void IRAM_ATTR encoder_b_change();
 // Buffers
 bool game_buffer[16][16];
 bool display_buffer[16][16];
+int display_pixel_brightness[16][16];
 bool (*game_buffer_ptr)[16] = game_buffer;
 bool (*display_buffer_ptr)[16] = display_buffer;
+int (*display_pixel_brightness_ptr)[16] = display_pixel_brightness;
 
 // Inputs / Debounce timers
 unsigned int last_iteration = 0;
@@ -67,9 +70,8 @@ const unsigned int GAME_COUNT = 11;
 array<unique_ptr<Game>, GAME_COUNT> games;
 
 // Class instantiations
-LedDriver led_driver{display_buffer_ptr};
-MenuHandler menu_handler{game_buffer_ptr};
-Cursor cursor{display_buffer_ptr, game_buffer_ptr};
+LedDriver led_driver{display_buffer_ptr, display_pixel_brightness_ptr};
+MenuHandler menu_handler{game_buffer_ptr, display_pixel_brightness_ptr};
 SemaphoreHandle_t buffer_mutex;
 
 void setup() {
@@ -99,9 +101,9 @@ void setup() {
   pinMode(LOW_SIDE_SERIAL_PIN, OUTPUT);
 
   buffer_mutex = xSemaphoreCreateMutex();
-  games[0].reset(new Conways{game_buffer_ptr, display_buffer_ptr});
+  games[0].reset(new Conways{game_buffer_ptr, display_buffer_ptr, display_pixel_brightness_ptr});
+  games[1].reset(new NaughtsCrosses{game_buffer_ptr, display_buffer_ptr, display_pixel_brightness_ptr});
   Serial.begin(9600);
-  cursor.game_paused = true;
   menu_handler.init_menu();
   // Tasks
 
@@ -254,7 +256,6 @@ void IRAM_ATTR button_3_isr() {
 void IRAM_ATTR nav_up() {
   unsigned int current_time = millis();
   if (current_time - last_nav_up_press >= JOYSTICK_DEBOUNCE_DELAY) {
-    cursor.move_up();
     last_nav_up_press = current_time;
     last_joystick_input = current_time;
     if (!menu_handler.menu_active) {
@@ -266,7 +267,6 @@ void IRAM_ATTR nav_up() {
 void IRAM_ATTR nav_right() {
   unsigned int current_time = millis();
   if (current_time - last_nav_right_press >= JOYSTICK_DEBOUNCE_DELAY) {
-    cursor.move_right();
     last_nav_right_press = current_time;
     last_joystick_input = current_time;
     if (!menu_handler.menu_active) {
@@ -278,7 +278,6 @@ void IRAM_ATTR nav_right() {
 void IRAM_ATTR nav_down() {
   unsigned int current_time = millis();
   if (current_time - last_nav_down_press >= JOYSTICK_DEBOUNCE_DELAY) {
-    cursor.move_down();
     last_nav_down_press = current_time;
     last_joystick_input = current_time;
     if (!menu_handler.menu_active) {
@@ -290,7 +289,6 @@ void IRAM_ATTR nav_down() {
 void IRAM_ATTR nav_left() {
   unsigned int current_time = millis();
   if (current_time - last_nav_left_press >= JOYSTICK_DEBOUNCE_DELAY) {
-    cursor.move_left();
     last_nav_left_press = current_time;
     last_joystick_input = current_time;
     if (!menu_handler.menu_active) {

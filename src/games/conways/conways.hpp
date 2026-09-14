@@ -8,9 +8,10 @@
 
 class Conways : public Game {
 public:
-    Conways(bool (*&game_buffer_ptr)[16], bool (*&display_buffer_ptr)[16]) {
+    Conways(bool (*&game_buffer_ptr)[16], bool (*&display_buffer_ptr)[16], int (*&display_pixel_brightness_ptr)[16]) {
         this->game_buffer_ptr = game_buffer_ptr;
         this->display_buffer_ptr = display_buffer_ptr;
+        this->display_pixel_brightness_ptr = display_pixel_brightness_ptr;
     }
 
     void iterate() override {
@@ -95,6 +96,11 @@ public:
 
     void load() override {
         cursor_ptr = new Cursor(display_buffer_ptr, game_buffer_ptr);
+        for (int i = 0; i < 16; i++) {
+            for (int j = 0; j < 16; j++) {
+                display_pixel_brightness_ptr[i][j] = 7;
+            }
+        }
         clear_game_buffer();
     }
 
@@ -118,6 +124,7 @@ private:
     bool paused = false;
     bool (*game_buffer_ptr)[16];
     bool (*display_buffer_ptr)[16];
+    int (*display_pixel_brightness_ptr)[16];
     bool cleared = false;
     bool manual_iteration = false;
     unsigned int last_iteration_time = 0;
