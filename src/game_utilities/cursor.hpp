@@ -1,3 +1,4 @@
+#pragma once
 #include <Arduino.h>
 
 class Cursor {
@@ -28,7 +29,6 @@ public:
 
     void refresh_cursor_position() {
         if (!game_paused) return;
-
         if (cursor_change) {
             // Ensures that the cursor is lit up every time its position is changed to make visibility clearer 
             cursor_change = false;

@@ -14,4 +14,4 @@ extern std::array<std::array<bool, 16>, 16> pacman_graphics;
 extern std::array<std::array<bool, 16>, 16> stopwatch_graphics;
 extern std::array<std::array<bool, 16>, 16> timer_graphics;
 
-extern array<array<array<bool, 16>, 16>, 11> game_menu_graphics;
+extern std::array<std::array<std::array<bool, 16>, 16>, 11> game_menu_graphics;

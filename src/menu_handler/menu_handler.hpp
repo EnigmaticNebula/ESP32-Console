@@ -8,7 +8,6 @@ using namespace std;
 class MenuHandler {
     private:
     bool (*game_buffer_ptr)[16];
-    tuple<Conways> games;
 
     void select_game() {
         switch (selected_game) {
@@ -107,7 +106,7 @@ class MenuHandler {
         array<array<bool, 16>, 16> menu_graphics = game_menu_graphics[game_id];
         for (int i = 0; i < 16; i++) {
             for (int j = 0; j < 16; j++) {
-                game_buffer_ptr[i][j] = menu_graphics[15 - i][j]; // Row index is 15 - i as menu graphics are flipped to make designing easier+
+                game_buffer_ptr[i][j] = menu_graphics[15 - i][j]; // Row index is 15 - i as menu graphics are flipped to make designing easier
             }
         }
     }
@@ -115,7 +114,7 @@ class MenuHandler {
 
     public:
 
-    bool menu_active = true;
+    volatile bool menu_active = true;
     unsigned int selected_game = 0;
 
     MenuHandler(bool (*&game_buffer_ptr)[16]) {
@@ -144,5 +143,15 @@ class MenuHandler {
         } else {
             menu_text.hidden = true;
         }
+    }
+
+    void hide_menu() {
+        menu_active = false;
+        menu_text.hidden = true;
+    }
+
+    void show_menu() {
+        menu_active = true;
+        menu_text.hidden = false;
     }
 };

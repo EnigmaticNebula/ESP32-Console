@@ -1,11 +1,13 @@
 #include <Arduino.h>
 #include <iostream>
 #include <algorithm>
+#include <memory>
 #include <led_array_driver.hpp>
 #include <pin_definitions.hpp>
 #include <menu_handler\menu_handler.hpp>
 #include <games\conways\conways.hpp>
 #include <games\game.hpp>
+#include <game_utilities\cursor.hpp>
 using namespace std;
 
 // Function declarations
@@ -62,13 +64,12 @@ bool button2_game_exit = false;
 
 // Game instantiations
 const unsigned int GAME_COUNT = 11;
-Conways conways_game;
-array<Game, GAME_COUNT> games = {{conways_game}};
+array<unique_ptr<Game>, GAME_COUNT> games;
 
 // Class instantiations
 LedDriver led_driver{display_buffer_ptr};
 MenuHandler menu_handler{game_buffer_ptr};
-
+Cursor cursor{display_buffer_ptr, game_buffer_ptr};
 SemaphoreHandle_t buffer_mutex;
 
 void setup() {
@@ -98,9 +99,9 @@ void setup() {
   pinMode(LOW_SIDE_SERIAL_PIN, OUTPUT);
 
   buffer_mutex = xSemaphoreCreateMutex();
-
+  games[0].reset(new Conways{game_buffer_ptr, display_buffer_ptr});
   Serial.begin(9600);
-
+  cursor.game_paused = true;
   menu_handler.init_menu();
   // Tasks
 
@@ -130,12 +131,6 @@ void loop() {
 
 }
 
-int get_iteration_speed() {
-    int raw_potentiometer_output = analogRead(ITERATION_SPEED_PIN);
-    int iteration_delay = ::map(raw_potentiometer_output, 0, 4095, 1000, 0);
-    return iteration_delay;
-}
-
 static void matrix_refresh(void* pvParameters) {
   for (;;) {
     // Ensure that buffers are not currently being used by the simulation loop
@@ -144,7 +139,7 @@ static void matrix_refresh(void* pvParameters) {
       xSemaphoreGive(buffer_mutex);
     }
     // Prevent task watchdog timer panics
-    vTaskDelay(pdMS_TO_TICKS(2)); 
+    vTaskDelay(pdMS_TO_TICKS(1)); 
   }
 }
 
@@ -165,18 +160,31 @@ static void game_loop(void* pvParameters) {
   attachInterrupt(digitalPinToInterrupt(ROTARY_ENCODER_B_PIN), encoder_b_change, CHANGE);
 
   for (;;) {
+    /*
+    memcpy operation MUST occur before the next game iteration. Some components (e.g. cursor),
+    operate directly on the display buffer, skipping the game buffer. If a change to
+    the display buffer is made during this operation, changes may not be displayed for
+    certain pixels.
+    */
+    if (xSemaphoreTake(buffer_mutex, portMAX_DELAY) == pdTRUE) {
+      memcpy(display_buffer_ptr, game_buffer_ptr, 16*16*sizeof(bool));
+      
+      xSemaphoreGive(buffer_mutex);
+    }
+
     unsigned int current_time = millis();
     if (current_time - last_speed_check >= 100) {
       last_speed_check = current_time;
       int raw_potentiometer_output = analogRead(ITERATION_SPEED_PIN);
       if (!menu_handler.menu_active) {
-        games[menu_handler.selected_game].potentiometer_change(raw_potentiometer_output);
+        games[menu_handler.selected_game]->potentiometer_change(raw_potentiometer_output);
       }
     }
 
     if (button1_game_exit && button2_game_exit) {
-      games[menu_handler.selected_game].unload();
-      menu_handler.menu_active = true;
+      games[menu_handler.selected_game]->unload();
+      menu_handler.show_menu();
+      menu_handler.init_menu();
     }
 
     if (current_time - last_button_1_press >= EXIT_GAME_BUTTON_WINDOW) {
@@ -187,17 +195,12 @@ static void game_loop(void* pvParameters) {
       button2_game_exit = false;
     }
 
-    if (menu_handler.menu_active) menu_handler.refresh();
-    else games[menu_handler.selected_game].iterate();
-
-    if (xSemaphoreTake(buffer_mutex, portMAX_DELAY) == pdTRUE) {
-      for (int i = 0; i < 16; i++) {
-        memcpy(display_buffer_ptr, game_buffer_ptr, 16*16*sizeof(bool));
-      }
-      
-      xSemaphoreGive(buffer_mutex);
+    if (menu_handler.menu_active) {
+      menu_handler.refresh();
+    } else {
+      games[menu_handler.selected_game]->iterate();
     }
-
+    
     vTaskDelay(pdMS_TO_TICKS(1)); // Prevent task watchdog timer panics
   }
 }
@@ -218,9 +221,10 @@ void IRAM_ATTR button_1_isr() {
   if (current_time - last_button_1_press >= BUTTON_DEBOUNCE_DELAY) {
     last_button_1_press = current_time;
     if (menu_handler.menu_active) {
-      games[menu_handler.selected_game].load();
+      games[menu_handler.selected_game]->load();
+      menu_handler.hide_menu();
     } else {
-      games[menu_handler.selected_game].button1();
+      games[menu_handler.selected_game]->button1();
       button1_game_exit = true;
     }
   }
@@ -231,7 +235,7 @@ void IRAM_ATTR button_2_isr() {
   if (current_time - last_button_2_press >= BUTTON_DEBOUNCE_DELAY) {
     last_button_2_press = current_time;
     if (!menu_handler.menu_active) {
-      games[menu_handler.selected_game].button2();
+      games[menu_handler.selected_game]->button2();
       button2_game_exit = true;
     }
   }
@@ -242,7 +246,7 @@ void IRAM_ATTR button_3_isr() {
   if (current_time - last_button_3_press >= BUTTON_DEBOUNCE_DELAY) {
     last_button_3_press = current_time;
     if (!menu_handler.menu_active) {
-      games[menu_handler.selected_game].button3();
+      games[menu_handler.selected_game]->button3();
     }
   }
 }
@@ -250,10 +254,11 @@ void IRAM_ATTR button_3_isr() {
 void IRAM_ATTR nav_up() {
   unsigned int current_time = millis();
   if (current_time - last_nav_up_press >= JOYSTICK_DEBOUNCE_DELAY) {
+    cursor.move_up();
     last_nav_up_press = current_time;
     last_joystick_input = current_time;
     if (!menu_handler.menu_active) {
-      games[menu_handler.selected_game].joystick_up();
+      games[menu_handler.selected_game]->joystick_up();
     }
   }
 }
@@ -261,10 +266,11 @@ void IRAM_ATTR nav_up() {
 void IRAM_ATTR nav_right() {
   unsigned int current_time = millis();
   if (current_time - last_nav_right_press >= JOYSTICK_DEBOUNCE_DELAY) {
+    cursor.move_right();
     last_nav_right_press = current_time;
     last_joystick_input = current_time;
     if (!menu_handler.menu_active) {
-      games[menu_handler.selected_game].joystick_right();
+      games[menu_handler.selected_game]->joystick_right();
     }
   }
 }
@@ -272,10 +278,11 @@ void IRAM_ATTR nav_right() {
 void IRAM_ATTR nav_down() {
   unsigned int current_time = millis();
   if (current_time - last_nav_down_press >= JOYSTICK_DEBOUNCE_DELAY) {
+    cursor.move_down();
     last_nav_down_press = current_time;
     last_joystick_input = current_time;
     if (!menu_handler.menu_active) {
-      games[menu_handler.selected_game].joystick_down();
+      games[menu_handler.selected_game]->joystick_down();
     }
   }
 }
@@ -283,10 +290,11 @@ void IRAM_ATTR nav_down() {
 void IRAM_ATTR nav_left() {
   unsigned int current_time = millis();
   if (current_time - last_nav_left_press >= JOYSTICK_DEBOUNCE_DELAY) {
+    cursor.move_left();
     last_nav_left_press = current_time;
     last_joystick_input = current_time;
     if (!menu_handler.menu_active) {
-      games[menu_handler.selected_game].joystick_left();
+      games[menu_handler.selected_game]->joystick_left();
     }
   }
 }
@@ -296,7 +304,7 @@ void IRAM_ATTR nav_act() {
   if (current_time - last_nav_action_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_action_press = current_time;
     if (!menu_handler.menu_active) {
-      games[menu_handler.selected_game].joystick_action();
+      games[menu_handler.selected_game]->joystick_action();
     }
   }
 }
@@ -309,7 +317,7 @@ void IRAM_ATTR encoder_a_change() {
       if (menu_handler.menu_active && menu_handler.selected_game < GAME_COUNT)  {
         menu_handler.next_game();
       } else if (!menu_handler.menu_active) {
-        games[menu_handler.selected_game].rotary_encoder_clockwise();
+        games[menu_handler.selected_game]->rotary_encoder_clockwise();
       }
     } else {
       anticlockwise_rotation = false;
@@ -326,7 +334,7 @@ void IRAM_ATTR encoder_b_change() {
       if (menu_handler.selected_game > 0 && menu_handler.menu_active) {
         menu_handler.previous_game();
       } else if (!menu_handler.menu_active) {
-        games[menu_handler.selected_game].rotary_encoder_anticlockwise();
+        games[menu_handler.selected_game]->rotary_encoder_anticlockwise();
       }
     } else {
       clockwise_rotation = false;
