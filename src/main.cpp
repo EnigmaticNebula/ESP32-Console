@@ -8,7 +8,7 @@
 #include <games\conways\conways.hpp>
 #include <games\naughts_crosses\naughts_crosses.hpp>
 #include <games\game.hpp>
-#include <game_utilities\cursor.hpp>
+#include <games\snake\snake.hpp>
 using namespace std;
 
 // Function declarations
@@ -103,6 +103,7 @@ void setup() {
   buffer_mutex = xSemaphoreCreateMutex();
   games[0].reset(new Conways{game_buffer_ptr, display_buffer_ptr, display_pixel_brightness_ptr});
   games[1].reset(new NaughtsCrosses{game_buffer_ptr, display_buffer_ptr, display_pixel_brightness_ptr});
+  games[2].reset(new Snake{game_buffer_ptr, display_buffer_ptr, display_pixel_brightness_ptr});
   Serial.begin(9600);
   menu_handler.init_menu();
   // Tasks
@@ -218,11 +219,20 @@ void clear_game_buffer() {
   }
 }
 
+void reset_pixel_brightness() {
+  for (int i = 0; i < 16; i++) {
+    for (int j = 0; j < 16; j++) {
+      display_pixel_brightness_ptr[i][j] = 7;
+    }
+  }
+}
+
 void IRAM_ATTR button_1_isr() {
   unsigned int current_time = millis();
   if (current_time - last_button_1_press >= BUTTON_DEBOUNCE_DELAY) {
     last_button_1_press = current_time;
     if (menu_handler.menu_active) {
+      reset_pixel_brightness();
       games[menu_handler.selected_game]->load();
       menu_handler.hide_menu();
     } else {
@@ -254,6 +264,7 @@ void IRAM_ATTR button_3_isr() {
 }
 
 void IRAM_ATTR nav_up() {
+  Serial.println("UP");
   unsigned int current_time = millis();
   if (current_time - last_nav_up_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_up_press = current_time;
@@ -265,6 +276,7 @@ void IRAM_ATTR nav_up() {
 }
 
 void IRAM_ATTR nav_right() {
+  Serial.println("RIGHT");
   unsigned int current_time = millis();
   if (current_time - last_nav_right_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_right_press = current_time;
@@ -276,6 +288,7 @@ void IRAM_ATTR nav_right() {
 }
 
 void IRAM_ATTR nav_down() {
+  Serial.println("DOWN");
   unsigned int current_time = millis();
   if (current_time - last_nav_down_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_down_press = current_time;
@@ -287,6 +300,7 @@ void IRAM_ATTR nav_down() {
 }
 
 void IRAM_ATTR nav_left() {
+  Serial.println("LEFT");
   unsigned int current_time = millis();
   if (current_time - last_nav_left_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_left_press = current_time;
@@ -298,6 +312,7 @@ void IRAM_ATTR nav_left() {
 }
 
 void IRAM_ATTR nav_act() {
+  Serial.println("ACT");
   unsigned int current_time = millis();
   if (current_time - last_nav_action_press >= JOYSTICK_DEBOUNCE_DELAY) {
     last_nav_action_press = current_time;
